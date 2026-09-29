@@ -1,0 +1,336 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  INDIVIDUAL
+  NGO
+  BUSINESS
+  COMMUNITY_ADMIN
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+enum ListingModule {
+  SHARE_BORROW
+  FOOD_RESCUE
+  INDUSTRIAL_SURPLUS
+  GREEN_MARKETPLACE
+}
+
+enum ListingStatus {
+  ACTIVE
+  PENDING
+  RESERVED
+  COMPLETED
+  PAUSED
+  DELETED
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+  DISMISSED
+}
+
+enum PaymentMethod {
+  CASH_ON_HANDOVER
+  UPI_ON_HANDOVER
+  FREE
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  passwordHash       String
+  fullName           String
+  phoneNumber        String?
+  avatarUrl          String?
+  role               UserRole           @default(INDIVIDUAL)
+  organizationName   String?
+  bio                String?            @db.Text
+  neighborhood       String             @default("Anna Nagar")
+  city               String             @default("Chennai")
+  latitude           Float              @default(13.0827)
+  longitude          Float              @default(80.2707)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+
+  isSuspended        Boolean            @default(false)
+  suspendedUntil     DateTime?
+  isBanned           Boolean            @default(false)
+  banReason          String?            @db.Text
+
+  ratingAvg          Decimal            @default(5.00) @db.Decimal(3, 2)
+  ratingCount        Int                @default(0)
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  listings           Listing[]
+  sentRequests       Request[]          @relation("RequesterRequests")
+  receivedRequests   Request[]          @relation("OwnerRequests")
+  sentMessages       Message[]
+  providedTrans      Transaction[]      @relation("ProviderTransactions")
+  receivedTrans      Transaction[]      @relation("RecipientTransactions")
+  reviewsGiven       Review[]           @relation("ReviewsGiven")
+  reviewsReceived    Review[]           @relation("ReviewsReceived")
+  verifications      Verification[]
+  notifications      Notification[]
+  filedReports       Report[]           @relation("ReportsFiled")
+  receivedReports    Report[]           @relation("ReportsAgainstUser")
+  auditLogs          AuditLog[]         @relation("AdminAuditLogs")
+
+  @@index([email])
+  @@index([neighborhood])
+  @@index([role])
+}
+
+model Listing {
+  id                    String        @id @default(uuid())
+  userId                String
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module                ListingModule
+  title                 String
+  description           String        @db.Text
+  category              String
+  status                ListingStatus @default(ACTIVE)
+
+  isFree                Boolean       @default(true)
+  price                 Decimal       @default(0.00) @db.Decimal(10, 2)
+  priceUnit             String?       // 'per_day', 'per_kg', 'per_box', 'total'
+  depositAmount         Decimal       @default(0.00) @db.Decimal(10, 2)
+  quantity              Decimal       @default(1.00) @db.Decimal(10, 2)
+  quantityUnit          String        @default("item")
+
+  neighborhood          String
+  city                  String        @default("Chennai")
+  latitude              Float
+  longitude             Float
+  approximateAddress    String
+  exactPickupAddress    String?
+
+  metadata              Json?
+
+  co2AvoidedKgPerUnit   Decimal       @default(1.50) @db.Decimal(8, 2)
+  wasteDivertedKgPerUnit Decimal      @default(1.00) @db.Decimal(8, 2)
+
+  isDemo                Boolean       @default(false)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  images                ListingImage[]
+  requests              Request[]
+  conversations         Conversation[]
+  transactions          Transaction[]
+  reports               Report[]
+
+  @@index([module, status])
+  @@index([neighborhood])
+  @@index([userId])
+}
+
+model ListingImage {
+  id           String   @id @default(uuid())
+  listingId    String
+  listing      Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  imageUrl     String   @db.Text
+  isCover      Boolean  @default(false)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([listingId])
+}
+
+model Request {
+  id                     String        @id @default(uuid())
+  listingId              String
+  listing                Listing       @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  requesterId            String
+  requester              User          @relation("RequesterRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  ownerId                String
+  owner                  User          @relation("OwnerRequests", fields: [ownerId], references: [id], onDelete: Cascade)
+  status                 RequestStatus @default(PENDING)
+
+  requestedQuantity      Decimal       @default(1.00) @db.Decimal(10, 2)
+  startDate              DateTime?
+  endDate                DateTime?
+  preferredPickupTime    DateTime?
+
+  questionnaireResponses Json?
+  initialMessage         String?       @db.Text
+
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  conversation           Conversation?
+  transaction            Transaction?
+
+  @@index([listingId])
+  @@index([requesterId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+model Conversation {
+  id             String    @id @default(uuid())
+  listingId      String?
+  listing        Listing?  @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  requestId      String?   @unique
+  request        Request?  @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  participant1Id String
+  participant2Id String
+  lastMessageAt  DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+
+  messages       Message[]
+
+  @@index([participant1Id, participant2Id])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String       @db.Text
+  attachmentUrl  String?      @db.Text
+  isQuickReply   Boolean      @default(false)
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([senderId])
+}
+
+model Transaction {
+  id                     String        @id @default(uuid())
+  requestId              String        @unique
+  request                Request       @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  listingId              String
+  listing                Listing       @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  providerId             String
+  provider               User          @relation("ProviderTransactions", fields: [providerId], references: [id], onDelete: Restrict)
+  recipientId            String
+  recipient              User          @relation("RecipientTransactions", fields: [recipientId], references: [id], onDelete: Restrict)
+  module                 ListingModule
+
+  quantityTransacted     Decimal       @db.Decimal(10, 2)
+  wasteDivertedKg        Decimal       @default(0.00) @db.Decimal(10, 2)
+  co2AvoidedKg           Decimal       @default(0.00) @db.Decimal(10, 2)
+  estimatedMoneySavedInr Decimal       @default(0.00) @db.Decimal(10, 2)
+  paymentMethod          PaymentMethod @default(FREE)
+
+  completedAt            DateTime      @default(now())
+
+  reviews                Review[]
+
+  @@index([providerId])
+  @@index([recipientId])
+  @@index([module])
+}
+
+model Review {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  reviewerId    String
+  reviewer      User        @relation("ReviewsGiven", fields: [reviewerId], references: [id], onDelete: Cascade)
+  revieweeId    String
+  reviewee      User        @relation("ReviewsReceived", fields: [revieweeId], references: [id], onDelete: Cascade)
+  rating        Int
+  comment       String?     @db.Text
+  createdAt     DateTime    @default(now())
+
+  @@unique([transactionId, reviewerId])
+  @@index([revieweeId])
+}
+
+model Verification {
+  id            String             @id @default(uuid())
+  userId        String
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentType  String
+  documentUrl   String             @db.Text
+  status        VerificationStatus @default(PENDING_REVIEW)
+  reviewerNotes String?            @db.Text
+  reviewedById  String?
+  createdAt     DateTime           @default(now())
+  reviewedAt    DateTime?
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String   @db.Text
+  actionUrl String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+model Report {
+  id                      String       @id @default(uuid())
+  reporterId              String
+  reporter                User         @relation("ReportsFiled", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUserId          String?
+  reportedUser            User?        @relation("ReportsAgainstUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedListingId       String?
+  reportedListing         Listing?     @relation(fields: [reportedListingId], references: [id], onDelete: Cascade)
+  transactionId           String?
+  category                String?
+  reason                  String
+  description             String       @db.Text
+  imageUrl                String?      @db.Text
+  status                  ReportStatus @default(PENDING)
+  adminNotes              String?      @db.Text
+  adminResolutionAction   String?
+  adminNoticeMessage      String?      @db.Text
+  createdAt               DateTime     @default(now())
+  resolvedAt              DateTime?
+
+  @@index([status])
+  @@index([reporterId])
+  @@index([transactionId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  admin      User     @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: Cascade)
+  action     String
+  targetType String
+  targetId   String
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([action])
+}
