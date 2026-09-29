@@ -366,12 +366,14 @@ export const App: React.FC = () => {
         defaultTitle={reportIssueParams.title}
       />
 
-      {/* Floating AI Chatbot Assistant across all platform pages */}
-      <AIChatbot
-        onNavigate={handleNavigate}
-        onOpenCreateListing={handleOpenCreateListing}
-        onOpenReportIssue={() => handleOpenReportIssue()}
-      />
+      {/* Floating AI Chatbot Assistant - only visible after logging in */}
+      {user && (
+        <AIChatbot
+          onNavigate={handleNavigate}
+          onOpenCreateListing={handleOpenCreateListing}
+          onOpenReportIssue={() => handleOpenReportIssue()}
+        />
+      )}
     </div>
   );
 };
